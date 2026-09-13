@@ -1,0 +1,26 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      SQLITE_PATH: /app/data/focus-os.sqlite
+      SESSION_SECRET: ${SESSION_SECRET:?Ustaw SESSION_SECRET w pliku .env}
+      WORKSPACE_ENCRYPTION_KEY: ${WORKSPACE_ENCRYPTION_KEY:?Ustaw WORKSPACE_ENCRYPTION_KEY w pliku .env}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-90}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      APP_ORIGIN: ${APP_ORIGIN:-}
+    ports:
+      - "${APP_PORT:-2026}:3000"
+    volumes:
+      - focus_os_data:/app/data
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  focus_os_data:

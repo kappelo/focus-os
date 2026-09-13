@@ -25,7 +25,9 @@ pierwszym logowaniu. Kolejne konta otrzymują rolę użytkownika.
 
 ## Szybki start
 
-Wymagania: Node.js **22.16 lub nowszy**, npm i Windows, Linux albo macOS.
+Wymagania: Node.js **22 LTS (22.16 lub nowszy, ale poniżej 23)**, npm i Windows,
+Linux albo macOS. Ten zakres zapewnia gotowy moduł SQLite bez lokalnej kompilacji
+na typowych platformach; Node 24 na Windows może wymagać Visual Studio Build Tools.
 SQLite działa lokalnie; nie instalujesz osobnego serwera bazy danych.
 
 W katalogu projektu uruchom:

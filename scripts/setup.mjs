@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
 
@@ -21,7 +21,7 @@ if (existsSync(path)) {
 }
 process.loadEnvFile(path);
 const databasePath = resolve(root, process.env.SQLITE_PATH ?? "data/focus-os.sqlite");
-mkdirSync(resolve(databasePath, ".."), { recursive: true });
+mkdirSync(dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
 db.exec(`CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL,

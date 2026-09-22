@@ -111,6 +111,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .task-layout { grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); }
 .focus-page { grid-template-columns: minmax(0, 1.3fr) minmax(260px, .8fr); }
 .focus-main { padding: var(--space); }
+.focus-break-config { display: grid; gap: 5px; margin: 12px 0; color: var(--muted); font-size: .82rem; }
+.focus-break-config label { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; color: var(--text); }
+.focus-break-config label span { display: inline-flex; align-items: center; gap: 5px; }
+.focus-break-config input { width: 72px; min-height: 38px; padding: 5px 8px; }
+.focus-break-config small { text-align: center; line-height: 1.5; }
 .timer-wrap { width: min(350px, 100%); }
 .timer-copy { width: 85%; text-align: center; }
 .timer-copy strong { font-size: clamp(2.6rem, 6vw, 4.6rem); letter-spacing: -.05em; }
@@ -144,6 +149,60 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .calendar-block strong { white-space: normal; font-size: .66rem; line-height: 1.4; }
 .calendar-block small { font-size: .58rem; }
 .project-card-v2 h2 { margin: 0; }
+.exam-card { grid-column: 1 / -1; }
+.exam-plan { display: grid; gap: 14px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.exam-plan-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.exam-plan-head > div { display: grid; gap: 4px; }
+.exam-plan-head small, .exam-plan-summary { color: var(--muted); font-size: .76rem; line-height: 1.5; }
+.exam-plan-head label { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: .76rem; }
+.exam-plan-head input { width: 72px; min-height: 38px; }
+.exam-plan-summary { margin: 0; }
+.exam-plan-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
+.exam-plan-day { display: grid; align-content: start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); min-width: 0; }
+.exam-card .exam-plan-day header { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.exam-card .exam-plan-day header > strong { font-size: .85rem; color: var(--text); text-align: left; }
+.exam-plan-day header span { color: var(--accent); font-size: .72rem; font-weight: 700; }
+.exam-plan-day ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.exam-plan-day li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; font-size: .78rem; }
+.exam-plan-day li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.exam-plan-day li small { display: block; color: var(--muted); font-size: .68rem; }
+.exam-plan-day li button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); cursor: pointer; }
+.exam-plan-dot { width: 7px; height: 7px; flex: none; margin: 9px; border-radius: 50%; background: var(--accent); }
+.exam-plan-day p { margin: 0; color: var(--muted); font-size: .73rem; }
+.exam-plan-day .button { justify-self: start; margin-top: auto; }
+.exam-completed-topics { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.exam-completed-topics button { padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.mistake-practice { grid-column: 1 / -1; padding: var(--space); display: grid; gap: 16px; }
+.mistake-practice-intro, .mistake-practice-question { display: grid; gap: 14px; }
+.mistake-practice-intro p, .mistake-practice-question p { margin: 0; color: var(--muted); }
+.mistake-practice-intro .button { justify-self: start; }
+.mistake-practice-question h3 { margin: 0; font-size: 1.1rem; line-height: 1.4; overflow-wrap: anywhere; }
+.mistake-practice-question label { display: grid; gap: 7px; }
+.mistake-practice-question textarea { min-height: 90px; }
+.mistake-practice-answer { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); overflow-wrap: anywhere; }
+.mistake-practice-answer small { color: var(--muted); }
+.study-insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--space); }
+.notification-layout > .panel.form-stack { margin-top: 0; padding: var(--space); }
+@media (max-width: 620px) {
+  .notification-status { flex-direction: column; align-items: stretch; }
+  .notification-status > div { width: 100%; }
+  .notification-status > .button-group { display: flex; flex-wrap: wrap; }
+  .notification-status > .button-group .button { flex: 1 1 140px; }
+}
+.insight-report { display: grid; align-content: start; gap: 14px; padding: var(--space); }
+.insight-report > p { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.insight-report > small, .insight-subjects small { color: var(--muted); }
+.insight-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; }
+.insight-metrics span { display: grid; gap: 5px; min-width: 0; padding: 11px; border-radius: 10px; background: var(--surface-2); }
+.insight-metrics small { color: var(--muted); font-size: .66rem; }
+.insight-metrics strong { font-size: .92rem; overflow-wrap: anywhere; }
+.insight-subject-filter { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.insight-subject-filter select { min-width: 150px; }
+.insight-subjects { display: grid; gap: 12px; }
+.insight-subjects article { display: grid; gap: 12px; padding: 13px; border: 1px solid var(--border); border-radius: 12px; }
+.insight-subjects h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: .91rem; }
+.insight-subjects h3 i { width: 10px; height: 10px; border-radius: 50%; }
+.insight-subjects p { margin: 0; color: var(--muted); font-size: .75rem; }
 .project-card-v2 > header { flex-wrap: wrap; }
 .project-card-v2 > header > div { flex: 1 1 170px; }
 .project-card-v2 > header select { width: auto; }

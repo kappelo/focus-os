@@ -115,6 +115,7 @@ export type Flashcard = {
   fsrs?: FsrsMemoryState;
   suspended?: boolean;
   updatedAt?: string;
+  sourceMistakeId?: string;
 };
 
 export type MediaAttachment = {
@@ -179,6 +180,9 @@ export type Exam = {
   date: string;
   subjectIds: string[];
   topics: string[];
+  completedTopics?: string[];
+  dailyMinutes?: number;
+  updatedAt?: string;
 };
 
 export type CalendarBlock = {
@@ -187,6 +191,8 @@ export type CalendarBlock = {
   start: string;
   end: string;
   taskId?: string;
+  sourceExamId?: string;
+  sourceItemId?: string;
   done: boolean;
 };
 
@@ -293,6 +299,8 @@ export type MistakeEntry = {
   nextReviewAt: string;
   createdAt: string;
   updatedAt: string;
+  reviewCount?: number;
+  correctStreak?: number;
 };
 
 export type StudyNote = {
@@ -404,7 +412,8 @@ export type WorkspaceSettings = {
   defaultTimerMode: string;
   autoStartBreak: boolean;
   autoStartFocus: boolean;
-  adaptiveBreaks: boolean;
+  timerSoundEnabled: boolean;
+  timerSoundVolume: number;
   fullscreenOnTimerStart: boolean;
   exitFullscreenOnPause: boolean;
   minimalFocusMode: boolean;

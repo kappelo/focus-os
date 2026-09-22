@@ -9,6 +9,9 @@ services:
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-90}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       APP_ORIGIN: ${APP_ORIGIN:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-https://github.com/kappelo/focus-os}
     ports:
       - "${APP_PORT:-2026}:3000"
     volumes:

@@ -37,16 +37,6 @@ export function sessionQuality(input: Pick<FocusSession, "durationMinutes" | "pl
   return Math.max(0, Math.min(100, completion + distraction + plan + rating));
 }
 
-export function adaptiveBreak(sessions: FocusSession[]) {
-  const recent = [...sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
-  if (!recent.length) return 5;
-  const averageQuality = recent.reduce((sum, session) => sum + session.quality, 0) / recent.length;
-  const averageEnergy = recent.reduce((sum, session) => sum + session.energy, 0) / recent.length;
-  if (averageQuality < 55 || averageEnergy < 2.5) return 12;
-  if (averageQuality > 82 && averageEnergy > 3.5) return 5;
-  return 8;
-}
-
 export function adaptiveFocusMinutes(
   sessions: FocusSession[],
   energy: number,

@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
+import webpush from "web-push";
 
 const root = resolve(import.meta.dirname, "..");
 const path = resolve(root, ".env.local");
@@ -18,6 +19,15 @@ if (existsSync(path)) {
     "SESSION_TTL_DAYS=90", "COOKIE_SECURE=false", "",
   ].join("\n"), { flag: "wx", mode: 0o600 });
   console.log("Utworzono .env.local z losowymi kluczami.");
+}
+const configured = readFileSync(path, "utf8");
+const hasPublic = /^VAPID_PUBLIC_KEY=.+$/m.test(configured);
+const hasPrivate = /^VAPID_PRIVATE_KEY=.+$/m.test(configured);
+if (hasPublic !== hasPrivate) throw new Error("Niekompletna para kluczy VAPID w .env.local. Uzupełnij ją przed uruchomieniem.");
+if (!hasPublic) {
+  const keys = webpush.generateVAPIDKeys();
+  appendFileSync(path, `\nVAPID_PUBLIC_KEY=${keys.publicKey}\nVAPID_PRIVATE_KEY=${keys.privateKey}\nVAPID_SUBJECT=https://github.com/kappelo/focus-os\n`);
+  console.log("Dodano lokalną parę kluczy VAPID. Klucz prywatny pozostaje w .env.local.");
 }
 process.loadEnvFile(path);
 const databasePath = resolve(root, process.env.SQLITE_PATH ?? "data/focus-os.sqlite");

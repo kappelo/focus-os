@@ -81,6 +81,22 @@ function initialize(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_sync_conflicts_owner
       ON sync_conflicts (user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      payload TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_subscriptions_owner ON push_subscriptions (user_id, active);
+    CREATE TABLE IF NOT EXISTS push_deliveries (
+      subscription_id TEXT NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,
+      schedule_id TEXT NOT NULL,
+      occurrence_at TEXT NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (subscription_id, schedule_id, occurrence_at)
+    );
   `);
   try {
     db.exec("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1");

@@ -27,6 +27,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { MistakePractice } from "@/components/mistake-practice";
 import { Modal } from "@/components/modal";
 import { localDateKey } from "@/lib/dates";
 import { createId } from "@/lib/ids";
@@ -479,6 +480,7 @@ function MistakeDatabase({ state, onUpdate }: { state: WorkspaceState; onUpdate:
   const visible = state.mistakes.filter((item) => filter === "all" || item.status === filter);
   return (
     <div className="tool-grid two-columns mistake-layout">
+      <MistakePractice state={state} onUpdate={onUpdate} />
       <section className="panel">
         <div className="panel-heading"><div><p className="eyebrow">NASTĘPNE POWTÓRKI</p><h2>Zagadnienia wymagające uwagi</h2></div></div>
         {topics.length ? <div className="priority-topic-list">{topics.map((topic, index) => <article key={`${topic.label}-${index}`}><span>{index + 1}</span><div><strong>{topic.label}</strong><small>{topic.reason}</small></div><b>{Math.round(topic.score)}</b></article>)}</div> : <p className="empty-copy">Brak słabych zagadnień — świetnie!</p>}

@@ -20,9 +20,11 @@ import {
   Zap,
   X,
 } from "lucide-react";
-import { adaptiveBreak, adaptiveFocusMinutes, sessionQuality } from "@/lib/algorithms";
+import { adaptiveFocusMinutes, sessionQuality } from "@/lib/algorithms";
 import { DEFAULT_TIMER_MODES } from "@/lib/default-data";
 import { createId } from "@/lib/ids";
+import { breakMinutesForMode } from "@/lib/timer-phases";
+import { playTimerSignal, type TimerSignal } from "@/lib/timer-signal";
 import type {
   FocusSession,
   PersistedTimer,
@@ -142,6 +144,7 @@ export function FocusView({
   const completionLock = useRef(false);
   const lastActivity = useRef(0);
   const pipWindow = useRef<Window | null>(null);
+  const signalContext = useRef<AudioContext | null>(null);
   const currentTask = state.tasks.find(
     (task) => task.id === (timer.sessionStartedAt ? timer.taskId : state.focusQueue[0]),
   );
@@ -164,6 +167,26 @@ export function FocusView({
       return () => window.clearTimeout(notice);
     }
   }, [storageKey, timer]);
+
+  useEffect(() => () => { void signalContext.current?.close(); }, []);
+
+  const soundTransition = useCallback((signal: TimerSignal) => {
+    if (!state.settings.timerSoundEnabled) return;
+    const context = signalContext.current;
+    if (!context) {
+      setIdleNotice("Przeglądarka zablokowała sygnał. Naciśnij Start/Pauza, aby włączyć dźwięk.");
+      return;
+    }
+    if (context.state === "suspended") {
+      void context.resume().then(() => {
+        if (!playTimerSignal(context, signal, state.settings.timerSoundVolume))
+          setIdleNotice("Przeglądarka zablokowała sygnał. Naciśnij Start/Pauza, aby włączyć dźwięk.");
+      }).catch(() => setIdleNotice("Przeglądarka zablokowała sygnał. Naciśnij Start/Pauza, aby włączyć dźwięk."));
+      return;
+    }
+    if (!playTimerSignal(context, signal, state.settings.timerSoundVolume))
+      setIdleNotice("Przeglądarka zablokowała sygnał. Naciśnij Start/Pauza, aby włączyć dźwięk.");
+  }, [state.settings.timerSoundEnabled, state.settings.timerSoundVolume]);
 
   useEffect(() => {
     const handleFullscreen = () =>
@@ -340,17 +363,11 @@ export function FocusView({
         });
       if (state.settings.exitFullscreenOnPause && document.fullscreenElement)
         void document.exitFullscreen().catch(() => undefined);
-      const regularBreak = state.settings.adaptiveBreaks
-        ? adaptiveBreak([...state.sessions, session])
-        : activeMode.break;
-      const isLongBreak =
-        (state.sessions.length + 1) % state.settings.longBreakAfter === 0;
-      const breakMinutes =
-        activeMode.id === "stopwatch"
-          ? 0
-          : isLongBreak
-            ? state.settings.longBreakMinutes
-            : regularBreak;
+      const breakMinutes = breakMinutesForMode(
+        activeMode, state.sessions.length + 1,
+        state.settings.longBreakAfter, state.settings.longBreakMinutes,
+      );
+      soundTransition(breakMinutes ? "break-start" : "focus-start");
       const autoStart = state.settings.autoStartBreak && Boolean(breakMinutes);
       setTimer({
         ...initialTimer(activeMode),
@@ -371,15 +388,28 @@ export function FocusView({
       preferredMode,
       state.focusQueue,
       state.sessions,
-      state.settings.adaptiveBreaks,
       state.settings.autoStartBreak,
       state.settings.exitFullscreenOnPause,
       state.settings.longBreakAfter,
       state.settings.longBreakMinutes,
       state.settings.notifications,
+      soundTransition,
       timer,
     ],
   );
+
+  const finishBreak = useCallback(() => {
+    soundTransition("focus-start");
+    const nextMode = availableModes.find((item) => item.id === timer.modeId) ?? preferredMode;
+    const autoStart = state.settings.autoStartFocus;
+    setTimer({
+      ...initialTimer(nextMode),
+      startedAt: autoStart ? Date.now() : null,
+      running: autoStart,
+      taskId: timer.taskId,
+      energy: timer.energy,
+    });
+  }, [availableModes, preferredMode, soundTransition, state.settings.autoStartFocus, timer.energy, timer.modeId, timer.taskId]);
 
   useEffect(() => {
     if (
@@ -391,30 +421,16 @@ export function FocusView({
       completionLock.current = true;
       const timeout = window.setTimeout(() => {
         if (timer.phase === "focus") finishFocus();
-        else {
-          const nextMode =
-            availableModes.find((item) => item.id === timer.modeId) ??
-            preferredMode;
-          const autoStart = state.settings.autoStartFocus;
-          setTimer({
-            ...initialTimer(nextMode),
-            startedAt: autoStart ? Date.now() : null,
-            running: autoStart,
-            taskId: timer.taskId,
-            energy: timer.energy,
-          });
-        }
+        else finishBreak();
       }, 0);
       return () => window.clearTimeout(timeout);
     }
     if (displaySeconds > 0) completionLock.current = false;
   }, [
-    availableModes,
     displaySeconds,
+    finishBreak,
     finishFocus,
     countingUp,
-    preferredMode,
-    state.settings.autoStartFocus,
     timer,
   ]);
 
@@ -452,6 +468,11 @@ export function FocusView({
 
   async function toggle() {
     const pausing = timer.running;
+    if (!pausing && state.settings.timerSoundEnabled) {
+      const context = signalContext.current ?? new AudioContext();
+      signalContext.current = context;
+      void context.resume().catch(() => setIdleNotice("Nie udało się włączyć dźwięku timera."));
+    }
     if (!pausing && (state.settings.fullscreenOnTimerStart || state.settings.focusShield))
       await enterFullscreen();
     if (pausing && state.settings.exitFullscreenOnPause)
@@ -525,7 +546,7 @@ export function FocusView({
       ...initialTimer(mode),
       phase: timer.phase,
       durationSeconds: minutes * 60,
-      remainingSeconds: mode.countUp ? 0 : minutes * 60,
+      remainingSeconds: mode.countUp && timer.phase === "focus" ? 0 : minutes * 60,
       taskId: currentTask?.id,
       energy: timer.energy,
     });
@@ -597,6 +618,20 @@ export function FocusView({
               {item.label}
             </button>
           ))}
+        </div>
+        <div className="focus-break-config">
+          <label>Przerwa w trybie {mode.label}
+            <span><input type="number" min="0" max="120" step="1" value={mode.break}
+              onChange={(event) => {
+                const minutes = Math.min(120, Math.max(0, Number(event.target.value) || 0));
+                onUpdate((current) => ({ ...current, settings: {
+                  ...current.settings,
+                  timerModes: current.settings.timerModes.map((item) =>
+                    item.id === mode.id ? { ...item, break: minutes } : item),
+                } }));
+              }} /> min</span>
+          </label>
+          <small>Po {state.settings.longBreakAfter} sesjach obowiązuje długa przerwa: {state.settings.longBreakMinutes} min. Możesz to zmienić w ustawieniach.</small>
         </div>
         {mode.id === "custom" ? (
           <label className="custom-time">
@@ -695,7 +730,7 @@ export function FocusView({
           <button
             className="icon-button"
             onClick={() =>
-              timer.phase === "focus" ? finishFocus(false, 3) : reset()
+              timer.phase === "focus" ? finishFocus(false, 3) : finishBreak()
             }
             aria-label="Pomiń etap"
           >
@@ -838,136 +873,72 @@ function formatTime(seconds: number) {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
-type LiveChannel = { gain: GainNode; nodes: AudioScheduledSourceNode[] };
 const SOUNDS = [
-  "Rain",
-  "Heavy Rain",
-  "Thunderstorm",
-  "Forest",
-  "Birds",
-  "Stream",
-  "Ocean",
-  "Wind",
-  "Fireplace",
-  "Night",
-  "Cafe",
-  "Library",
-  "Train",
-  "Airplane",
-  "City at Night",
-  "Keyboard",
-  "Clock",
-  "Fan",
-  "White Noise",
-  "Brown Noise",
-  "Pink Noise",
-  "Deep Noise",
-  "Ambient",
-  "Lo-fi",
-  "Deep Focus",
+  { id: "rain", label: "Deszcz", file: "/audio/rain.ogg" },
+  { id: "storm", label: "Deszcz i grzmot", file: "/audio/thunder.wav" },
+  { id: "forest", label: "Las", file: "/audio/forest.mp3" },
+  { id: "birds", label: "Ptaki", file: "/audio/birds.ogg" },
+  { id: "stream", label: "Płynąca woda", file: "/audio/waterflow.mp3" },
+  { id: "fireplace", label: "Trzaskający ogień", file: "/audio/fireplace.ogg" },
+] as const;
+type SoundId = (typeof SOUNDS)[number]["id"];
+const PRESETS: { label: string; sounds: SoundId[] }[] = [
+  { label: "Deszczowy las", sounds: ["rain", "forest", "birds"] },
+  { label: "Leśny strumień", sounds: ["forest", "birds", "stream"] },
+  { label: "Deszcz przy kominku", sounds: ["fireplace", "rain"] },
 ];
-const PRESETS: Record<string, string[]> = {
-  "Rainy Cafe": ["Rain", "Cafe"],
-  "Forest Study": ["Forest", "Birds", "Stream"],
-  "Cozy Fireplace": ["Fireplace", "Night"],
-  "Deep Night": ["Night", "Deep Noise"],
-  "Train Study": ["Train", "Rain"],
-  "Deep Work": ["Brown Noise", "Deep Focus"],
-};
-
-const SOUND_LABELS: Record<string, string> = {
-  Rain: "Deszcz",
-  "Heavy Rain": "Ulewa",
-  Thunderstorm: "Burza",
-  Forest: "Las",
-  Birds: "Ptaki",
-  Stream: "Strumień",
-  Ocean: "Ocean",
-  Wind: "Wiatr",
-  Fireplace: "Kominek",
-  Night: "Noc",
-  Cafe: "Kawiarnia",
-  Library: "Biblioteka",
-  Train: "Pociąg",
-  Airplane: "Samolot",
-  "City at Night": "Miasto nocą",
-  Keyboard: "Klawiatura",
-  Clock: "Zegar",
-  Fan: "Wentylator",
-  "White Noise": "Biały szum",
-  "Brown Noise": "Brązowy szum",
-  "Pink Noise": "Różowy szum",
-  "Deep Noise": "Głęboki szum",
-  Ambient: "Ambient",
-  "Lo-fi": "Lo-fi",
-  "Deep Focus": "Głębokie skupienie",
-};
-
-const PRESET_LABELS: Record<string, string> = {
-  "Rainy Cafe": "Deszczowa kawiarnia",
-  "Forest Study": "Nauka w lesie",
-  "Cozy Fireplace": "Przy kominku",
-  "Deep Night": "Głęboka noc",
-  "Train Study": "Nauka w pociągu",
-  "Deep Work": "Głęboka praca",
-};
 
 function SoundMixer() {
-  const context = useRef<AudioContext | null>(null);
-  const live = useRef(new Map<string, LiveChannel>());
+  const live = useRef(new Map<SoundId, HTMLAudioElement>());
   const [active, setActive] = useState<Record<string, number>>({});
-  const [expanded, setExpanded] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(
-    () => () => {
-      for (const channel of live.current.values())
-        channel.nodes.forEach((node) => node.stop());
-      void context.current?.close();
-    },
-    [],
-  );
+  useEffect(() => () => {
+    for (const audio of live.current.values()) audio.pause();
+    live.current.clear();
+  }, []);
 
-  function toggle(name: string, volume = 0.24) {
-    if (live.current.has(name)) {
-      const channel = live.current.get(name)!;
-      const now = channel.gain.context.currentTime;
-      channel.gain.gain.cancelScheduledValues(now);
-      channel.gain.gain.linearRampToValueAtTime(0, now + 0.35);
-      window.setTimeout(
-        () => channel.nodes.forEach((node) => node.stop()),
-        380,
-      );
-      live.current.delete(name);
-      setActive((current) => {
-        const next = { ...current };
-        delete next[name];
-        return next;
-      });
-      return;
-    }
-    const audio = context.current ?? new AudioContext();
-    context.current = audio;
-    void audio.resume();
-    const channel = buildSound(audio, name, volume);
-    live.current.set(name, channel);
-    setActive((current) => ({ ...current, [name]: volume }));
+  function stop(name: SoundId) {
+    const audio = live.current.get(name);
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    live.current.delete(name);
+    setActive((current) => { const next = { ...current }; delete next[name]; return next; });
   }
 
-  function setVolume(name: string, volume: number) {
+  function start(name: SoundId, volume = 0.24) {
+    const sound = SOUNDS.find((item) => item.id === name)!;
+    const audio = new Audio(sound.file);
+    audio.loop = true;
+    audio.volume = volume;
+    live.current.set(name, audio);
+    setError("");
+    void audio.play().then(() => {
+      if (live.current.get(name) === audio) setActive((current) => ({ ...current, [name]: volume }));
+    }).catch(() => {
+      if (live.current.get(name) === audio) {
+        live.current.delete(name);
+        setError(`Nie udało się odtworzyć: ${sound.label}. Sprawdź dostępność pliku lub ustawienia dźwięku.`);
+      }
+    });
+  }
+
+  function toggle(name: SoundId, volume = 0.24) {
+    if (live.current.has(name)) stop(name);
+    else start(name, volume);
+  }
+
+  function setVolume(name: SoundId, volume: number) {
     const channel = live.current.get(name);
-    if (channel)
-      channel.gain.gain.setTargetAtTime(
-        volume,
-        channel.gain.context.currentTime,
-        0.08,
-      );
+    if (channel) channel.volume = volume;
     setActive((current) => ({ ...current, [name]: volume }));
   }
 
-  function applyPreset(names: string[]) {
+  function applyPreset(names: SoundId[]) {
     for (const name of [...live.current.keys()])
-      if (!names.includes(name)) toggle(name);
-    for (const name of names) if (!live.current.has(name)) toggle(name, 0.18);
+      if (!names.includes(name)) stop(name);
+    for (const name of names) if (!live.current.has(name)) start(name, 0.18);
   }
 
   return (
@@ -982,7 +953,7 @@ function SoundMixer() {
         <button
           className="icon-button"
           onClick={() => {
-            for (const name of [...live.current.keys()]) toggle(name);
+            for (const name of [...live.current.keys()]) stop(name);
           }}
           aria-label="Wycisz wszystko"
         >
@@ -990,110 +961,40 @@ function SoundMixer() {
         </button>
       </div>
       <div className="preset-row">
-        {Object.entries(PRESETS)
-          .slice(0, 3)
-          .map(([label, names]) => (
-            <button key={label} onClick={() => applyPreset(names)}>
-              {PRESET_LABELS[label] ?? label}
+        {PRESETS.map(({ label, sounds }) => (
+            <button key={label} onClick={() => applyPreset(sounds)}>
+              {label}
             </button>
           ))}
       </div>
-      <div className={`sound-grid ${expanded ? "expanded" : ""}`}>
-        {SOUNDS.slice(0, expanded ? SOUNDS.length : 6).map((name) => (
+      <div className="sound-grid expanded">
+        {SOUNDS.map(({ id, label }) => (
           <button
-            key={name}
-            className={name in active ? "active" : ""}
-            onClick={() => toggle(name)}
+            key={id}
+            className={id in active ? "active" : ""}
+            onClick={() => toggle(id)}
+            aria-pressed={id in active}
           >
             <Volume2 size={15} />
-            {SOUND_LABELS[name] ?? name}
+            {label}
           </button>
         ))}
       </div>
-      <button
-        className="text-button"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        {expanded ? "Pokaż mniej" : `Wszystkie dźwięki (${SOUNDS.length})`}
-      </button>
-      {Object.entries(active).map(([name, volume]) => (
-        <label className="volume-row" key={name}>
-          <span>{SOUND_LABELS[name] ?? name}</span>
+      {error ? <p className="focus-browser-notice" role="alert">{error}</p> : null}
+      {SOUNDS.filter(({ id }) => id in active).map(({ id, label }) => (
+        <label className="volume-row" key={id}>
+          <span>{label}</span>
           <input
-            aria-label={`Głośność: ${SOUND_LABELS[name] ?? name}`}
+            aria-label={`Głośność: ${label}`}
             type="range"
             min="0"
             max="0.5"
             step="0.01"
-            value={volume}
-            onChange={(event) => setVolume(name, Number(event.target.value))}
+            value={active[id]}
+            onChange={(event) => setVolume(id, Number(event.target.value))}
           />
         </label>
       ))}
     </section>
   );
-}
-
-function buildSound(
-  context: AudioContext,
-  name: string,
-  volume: number,
-): LiveChannel {
-  const gain = context.createGain();
-  gain.gain.setValueAtTime(0, context.currentTime);
-  gain.gain.linearRampToValueAtTime(volume, context.currentTime + 0.45);
-  gain.connect(context.destination);
-  const buffer = context.createBuffer(
-    1,
-    context.sampleRate * 5,
-    context.sampleRate,
-  );
-  const data = buffer.getChannelData(0);
-  let brown = 0;
-  for (let i = 0; i < data.length; i += 1) {
-    const white = Math.random() * 2 - 1;
-    brown = (brown + 0.02 * white) / 1.02;
-    data[i] =
-      name.includes("Brown") || name.includes("Deep") || name === "Thunderstorm"
-        ? brown * 3.5
-        : name.includes("Pink")
-          ? (white + brown * 2) / 3
-          : white;
-  }
-  const source = context.createBufferSource();
-  source.buffer = buffer;
-  source.loop = true;
-  const filter = context.createBiquadFilter();
-  const index = SOUNDS.indexOf(name);
-  filter.type =
-    name === "Birds" || name === "Keyboard" || name === "Clock"
-      ? "bandpass"
-      : name.includes("Deep") || name === "Airplane"
-        ? "lowpass"
-        : "highpass";
-  filter.frequency.value = name.includes("Deep")
-    ? 260
-    : name === "Rain"
-      ? 4200
-      : 500 + (index % 9) * 420;
-  filter.Q.value = name === "Clock" || name === "Birds" ? 8 : 0.8 + (index % 4);
-  source.connect(filter).connect(gain);
-  source.start();
-  const nodes: AudioScheduledSourceNode[] = [source];
-  if (
-    ["Clock", "Ambient", "Lo-fi", "Deep Focus", "Train", "Airplane"].includes(
-      name,
-    )
-  ) {
-    const oscillator = context.createOscillator();
-    const oscillatorGain = context.createGain();
-    oscillator.type = name === "Clock" ? "square" : "sine";
-    oscillator.frequency.value =
-      name === "Clock" ? 2 : name === "Lo-fi" ? 110 : 48 + index * 2;
-    oscillatorGain.gain.value = name === "Clock" ? 0.025 : 0.045;
-    oscillator.connect(oscillatorGain).connect(gain);
-    oscillator.start();
-    nodes.push(oscillator);
-  }
-  return { gain, nodes };
 }

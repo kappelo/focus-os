@@ -18,6 +18,11 @@ aplikacji PWA, którą uruchamiasz na własnym serwerze.
   rozmiar tekstu, gęstość, własne linki, ustawienia nauki i druk planu.
 - **Dane** — SQLite na serwerze, IndexedDB offline, synchronizacja urządzeń
   korzystających z tego samego serwera, rewizje i eksport konta.
+- **Cykl przygotowań** — dzienny plan do egzaminu z tematami, zadaniami i
+  powtórkami FSRS; sesja poprawiania błędów oraz raport plan kontra wykonanie
+  i raport każdego przedmiotu.
+- **Przypomnienia** — lokalne w otwartej karcie oraz opcjonalne Web Push
+  po zamknięciu aplikacji na urządzeniach z bezpiecznym kontekstem.
 
 W pustej instalacji `npm run setup` tworzy konto startowe **admin** z PIN-em
 **1234**. Ponieważ te dane są publiczne, aplikacja wymusza zmianę PIN-u przy
@@ -42,7 +47,7 @@ npm start
 Otwórz [localhost:2026](http://localhost:2026), wybierz **Mam konto** i zaloguj
 się jako `admin` PIN-em `1234`. Ustaw nowy PIN przed udostępnieniem serwera.
 
-`setup` generuje dwa niezależne losowe sekrety w `.env.local` i zakłada konto
+`setup` generuje niezależne losowe sekrety sesji i danych oraz parę VAPID w `.env.local`, a także zakłada konto
 startowe tylko wtedy, gdy baza nie zawiera jeszcze użytkowników.
 Nie nadpisuje istniejącej konfiguracji i nie kasuje danych.
 Schemat bazy tworzy się automatycznie przy pierwszym użyciu.
@@ -58,6 +63,14 @@ oraz Python odpowiednie dla swojego systemu.
 3. Na pulpicie wybierz czas oraz energię i przejdź do proponowanej sesji.
 4. Po nauce sprawdź z pamięci, co potrafisz. Zapisz trudne pytania jako fiszki.
 5. Wracaj do powtórek i sprawdzaj postęp w tygodniu.
+
+W **Więcej → Egzaminy** podaj datę, przedmioty i tematy, a następnie ustaw
+budżet minut dziennie. Plan jest wyliczany na bieżąco; można oznaczać tematy
+jako opanowane i dodawać wybrany dzień do planera. Pominięty dzień powoduje
+przeliczenie pozostałego zakresu, bez automatycznego nadpisywania kalendarza.
+W **Nauka → Baza błędów** uruchom krótką sesję ponownego rozwiązania, oceń
+odpowiedź i w razie potrzeby utwórz fiszkę. **Więcej → Analityka** pokazuje
+różnicę między szacowanym a faktycznym czasem zadań oraz raporty przedmiotów.
 
 Plan na pulpicie jest sugestią czasu pracy, nie oceną opanowania materiału.
 Uwzględnia dostępne zadania i fiszki, pomija zawieszone karty i zadania z
@@ -77,6 +90,11 @@ Sesja HttpOnly trwa domyślnie 90 dni; F5 nie wylogowuje użytkownika.
 Dla pełnej PWA na telefonie potrzebny jest **HTTPS** oraz wersja produkcyjna.
 HTTP w zaufanej sieci LAN obsługuje podstawową pracę i synchronizację.
 Instalacja PWA i działanie offline wymagają pierwszej udanej wizyty online.
+Web Push po zamknięciu aplikacji **nie działa przez zwykły HTTP z adresu LAN**:
+przeglądarki wymagają bezpiecznego kontekstu. `http://localhost` jest wyjątkiem
+do testów na tym samym urządzeniu. Harmonogram pozostaje wspólny dla konta,
+ale subskrypcję Push włączasz osobno na każdym obsługiwanym urządzeniu.
+Serwer produkcyjny uruchamia proces sprawdzający terminy co 30 sekund.
 
 ## Konfiguracja
 
@@ -91,6 +109,8 @@ Przykład opisuje plik `.env.example`. Nie dodawaj `.env.local` do Git.
 | SESSION_TTL_DAYS | Długość sesji, domyślnie 90 dni |
 | COOKIE_SECURE | Ustaw true przy publicznym HTTPS |
 | APP_ORIGIN | Publiczny adres HTTPS za reverse proxy |
+| VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY | Para Web Push; `npm run setup` generuje ją lokalnie, przechowuj prywatny klucz poza Git |
+| VAPID_SUBJECT | Kontakt VAPID, domyślnie adres repozytorium |
 
 Nie zmieniaj klucza szyfrowania bez migracji danych. Dotychczasowe zaszyfrowane
 workspace’y wymagają tego samego klucza.
@@ -131,7 +151,10 @@ docker compose up -d --build
 ```
 
 Kontener przechowuje SQLite w trwałym wolumenie `focus_os_data`.
-Przy reverse proxy ustaw APP_ORIGIN i COOKIE_SECURE.
+Przy reverse proxy ustaw APP_ORIGIN i COOKIE_SECURE. Aby włączyć Web Push
+w Dockerze, wygeneruj parę VAPID poza kontenerem (np. `npx web-push generate-vapid-keys`)
+i podaj ją w prywatnym `.env`. Kontener uruchamia serwer wraz z procesem
+wysyłkowym tylko po podaniu obu kluczy.
 Nie usuwaj wolumenu podczas aktualizacji.
 
 ## Jakość i publiczny GitHub
@@ -161,9 +184,9 @@ Informacje bezpieczeństwa: [SECURITY.md](SECURITY.md).
 
 ## Ograniczenia
 
-- Powiadomienia o terminach wymagają uruchomionej aplikacji; brak serwera Web Push.
+- Przypomnienia w zamkniętej aplikacji wymagają Web Push, działającego serwera i bezpiecznego kontekstu (HTTPS lub lokalny `localhost`). Na mobilnym HTTP w LAN dostępne są tylko przypomnienia przy otwartej aplikacji.
 - PWA nie blokuje dowolnych stron w innych aplikacjach. „Tarcza skupienia” działa wewnątrz Focus OS.
-- Dźwięki tła są generowane przez przeglądarkę; nie są nagraniami biblioteki czy deszczu.
+- Dźwięki tła to lokalne nagrania opisane w [public/audio/README.md](public/audio/README.md); działają także bez internetu. Krótkie sygnały zmiany etapu są generowane przez przeglądarkę i wymagają zezwolenia na odtwarzanie dźwięku.
 - PIN/biometria blokują lokalny interfejs, nie szyfrują całego magazynu przeglądarki.
 - Synchronizacja wymaga tego samego serwera. Dwie odrębne instalacje SQLite nie synchronizują się ze sobą.
 - Aplikacja nie była poddana niezależnemu audytowi bezpieczeństwa.

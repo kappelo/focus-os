@@ -13,6 +13,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { PwaInstallButton } from "@/components/pwa-install";
 import { createId } from "@/lib/ids";
+import { duePushOccurrence } from "@/lib/push-schedule";
 import type { NotificationSchedule, WorkspaceState } from "@/lib/types";
 
 type UpdateWorkspace = (recipe: (state: WorkspaceState) => WorkspaceState) => void;
@@ -30,33 +31,26 @@ export function NotificationScheduler({
 
   const checkSchedules = useCallback(async () => {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
-    const due = state.notificationSchedules.filter(
-      (schedule) =>
-        schedule.enabled &&
-        new Date(schedule.scheduledAt).getTime() <= Date.now() &&
-        !firing.current.has(schedule.id),
-    );
-    for (const schedule of due) {
-      firing.current.add(schedule.id);
-      await showScheduledNotification(schedule);
+    // The server owns deliveries for subscribed browsers, including when this tab is open.
+    if ("serviceWorker" in navigator && window.isSecureContext) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (await registration.pushManager?.getSubscription()) return;
+      } catch { /* Keep in-tab reminders available when Push is unavailable. */ }
     }
-    if (!due.length) return;
-    const now = new Date().toISOString();
-    onUpdate((current) => ({
-      ...current,
-      notificationSchedules: current.notificationSchedules.map((schedule) => {
-        if (!due.some((item) => item.id === schedule.id)) return schedule;
-        return {
-          ...schedule,
-          enabled: schedule.repeat !== "none",
-          scheduledAt: nextOccurrence(schedule),
-          lastTriggeredAt: now,
-          updatedAt: now,
-        };
-      }),
-    }));
-    due.forEach((schedule) => firing.current.delete(schedule.id));
-  }, [onUpdate, state.notificationSchedules]);
+    for (const schedule of state.notificationSchedules) {
+      const occurrence = duePushOccurrence(schedule);
+      if (!occurrence) continue;
+      const key = `focus-reminder:${schedule.id}`;
+      if (firing.current.has(key) || window.localStorage.getItem(key) === occurrence) continue;
+      firing.current.add(key);
+      try {
+        await showScheduledNotification(schedule);
+        window.localStorage.setItem(key, occurrence);
+      } catch { /* A later tick may retry when notification APIs recover. */ }
+      finally { firing.current.delete(key); }
+    }
+  }, [state.notificationSchedules]);
 
   useEffect(() => {
     void checkSchedules();
@@ -137,6 +131,65 @@ export function NotificationCenter({ state, onUpdate }: { state: WorkspaceState;
   const [repeat, setRepeat] = useState<NotificationSchedule["repeat"]>("none");
   const [kind, setKind] = useState<NotificationSchedule["kind"]>("study");
   const [message, setMessage] = useState("");
+  const [pushKey, setPushKey] = useState("");
+  const [pushAvailable, setPushAvailable] = useState(false);
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const securePushContext = typeof window !== "undefined" && window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window;
+
+  useEffect(() => {
+    if (!securePushContext) return;
+    let active = true;
+    void Promise.all([
+      fetch("/api/push", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<{ available: boolean; publicKey: string }> : null),
+      navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()),
+    ]).then(([config, subscription]) => {
+      if (!active) return;
+      setPushAvailable(Boolean(config?.available));
+      setPushKey(config?.publicKey ?? "");
+      setPushSubscribed(Boolean(subscription));
+    }).catch(() => { if (active) setPushAvailable(false); });
+    return () => { active = false; };
+  }, [securePushContext]);
+
+  async function enablePush() {
+    if (!securePushContext || !pushKey || pushBusy) return;
+    setPushBusy(true);
+    try {
+      const granted = await Notification.requestPermission();
+      setPermission(granted);
+      if (granted !== "granted") throw new Error("Przeglądarka nie udzieliła zgody.");
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlBytes(pushKey) });
+      const response = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subscription.toJSON()) });
+      if (!response.ok) {
+        if (!existing) await subscription.unsubscribe();
+        throw new Error("Serwer nie zapisał subskrypcji Push.");
+      }
+      setPushSubscribed(true);
+      setMessage("Powiadomienia w tle są włączone na tym urządzeniu.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nie udało się włączyć powiadomień Push.");
+    } finally { setPushBusy(false); }
+  }
+
+  async function disablePush() {
+    if (!securePushContext || pushBusy) return;
+    setPushBusy(true);
+    try {
+      const subscription = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (subscription) {
+        const response = await fetch("/api/push", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint }) });
+        if (!response.ok) throw new Error("Serwer nie wyłączył subskrypcji.");
+        await subscription.unsubscribe();
+      }
+      setPushSubscribed(false);
+      setMessage("Powiadomienia w tle wyłączono na tym urządzeniu.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nie udało się wyłączyć powiadomień Push.");
+    } finally { setPushBusy(false); }
+  }
 
   async function requestPermission() {
     if (!("Notification" in window)) {
@@ -181,8 +234,12 @@ export function NotificationCenter({ state, onUpdate }: { state: WorkspaceState;
     <div className="notification-layout">
       <section className="panel notification-status">
         <span className={permission === "granted" ? "ready" : ""}><BellRing size={26} /></span>
-        <div><p className="eyebrow">POWIADOMIENIA PWA</p><h2>{permission === "granted" ? "Gotowe do przypominania" : permission === "unsupported" ? "Brak obsługi w tej przeglądarce" : "Wymagana zgoda"}</h2><p>Przypomnienia zawierają akcje „Rozpocznij”, „Odłóż” i „Gotowe”. Najpewniej działają w zainstalowanej aplikacji PWA.</p></div>
-        <div className="button-group"><PwaInstallButton /><button className="button button-secondary" onClick={() => void testNotification()}><Send size={16} /> Test</button>{permission !== "granted" ? <button className="button button-primary" onClick={() => void requestPermission()}><Bell size={16} /> Włącz</button> : null}</div>
+        <div><p className="eyebrow">POWIADOMIENIA PWA</p><h2>{pushSubscribed ? "Powiadomienia w tle aktywne" : permission === "granted" ? "Powiadomienia w otwartej aplikacji" : permission === "unsupported" ? "Brak obsługi w tej przeglądarce" : "Wymagana zgoda"}</h2><p>{pushSubscribed ? "Serwer wyśle przypomnienia także po zamknięciu aplikacji, jeśli urządzenie ma dostęp do internetu." : "Bez Web Push przypomnienia pojawią się tylko, gdy aplikacja pozostaje otwarta."} Akcje: „Rozpocznij”, „Odłóż” i „Gotowe”.</p></div>
+        <div className="button-group"><PwaInstallButton /><button className="button button-secondary" onClick={() => void testNotification()}><Send size={16} /> Test lokalny</button>{permission !== "granted" ? <button className="button button-primary" onClick={() => void requestPermission()}><Bell size={16} /> Włącz lokalne</button> : null}</div>
+      </section>
+      <section className="panel form-stack" aria-label="Powiadomienia w tle">
+        <div><p className="eyebrow">WEB PUSH</p><h2>Po zamknięciu aplikacji</h2></div>
+        {!securePushContext ? <p className="inline-notice">Na zwykłym HTTP z adresu sieci lokalnej przeglądarka blokuje Web Push. Użyj HTTPS; wyjątkiem do testów jest localhost na tym samym urządzeniu.</p> : !pushAvailable ? <p className="inline-notice">Serwer Push jest niedostępny lub nie ma skonfigurowanych kluczy VAPID.</p> : <><p>Włącz osobno na każdym urządzeniu. Zaplanowane terminy są wspólne dla konta.</p><div className="button-group">{pushSubscribed ? <button className="button button-secondary" disabled={pushBusy} onClick={() => void disablePush()}>Wyłącz na tym urządzeniu</button> : <button className="button button-primary" disabled={pushBusy} onClick={() => void enablePush()}><BellRing size={16} /> Włącz powiadomienia w tle</button>}</div></>}
       </section>
       <div className="tool-grid two-columns">
         <form className="panel form-stack" onSubmit={add}>
@@ -223,14 +280,6 @@ async function showScheduledNotification(schedule: NotificationSchedule) {
   if ("Notification" in window && Notification.permission === "granted") new Notification(schedule.title, { body: schedule.body });
 }
 
-function nextOccurrence(schedule: NotificationSchedule) {
-  if (schedule.repeat === "none") return schedule.scheduledAt;
-  const date = new Date(schedule.scheduledAt);
-  const step = schedule.repeat === "daily" ? 1 : 7;
-  do date.setDate(date.getDate() + step); while (date.getTime() <= Date.now());
-  return date.toISOString();
-}
-
 function localDateTimeValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
@@ -238,4 +287,9 @@ function localDateTimeValue(date: Date) {
 
 function repeatLabel(value: NotificationSchedule["repeat"]) {
   return value === "daily" ? "codziennie" : value === "weekly" ? "co tydzień" : "jednorazowo";
+}
+
+function base64UrlBytes(value: string) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }

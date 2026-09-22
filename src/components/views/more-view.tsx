@@ -58,6 +58,8 @@ import {
 import { PwaInstallButton } from "@/components/pwa-install";
 import { ShortcutsManager } from "@/components/shortcuts-manager";
 import { OrganizationHub } from "@/components/organization-hub";
+import { ExamPlanView } from "@/components/exam-plan";
+import { StudyInsights } from "@/components/study-insights";
 import { NotificationCenter } from "@/components/notification-center";
 import { SecurityCenter } from "@/components/security-center";
 import type {
@@ -357,6 +359,7 @@ function Analytics({ state }: { state: WorkspaceState }) {
   const forgettingRate = state.flashcardReviews.length ? Math.round((failedReviews / state.flashcardReviews.length) * 100) : 0;
   return (
     <div className="analytics-stack">
+      <StudyInsights state={state} />
       <div className="analytics-filter segmented">
         {(["week", "month", "all"] as const).map((value) => (
           <button
@@ -688,6 +691,9 @@ function Exams({
         .split(",")
         .map((topic) => topic.trim())
         .filter(Boolean),
+      completedTopics: [],
+      dailyMinutes: 45,
+      updatedAt: new Date().toISOString(),
     };
     onUpdate((current) => ({ ...current, exams: [...current.exams, exam] }));
     setAdding(false);
@@ -762,6 +768,7 @@ function Exams({
                 <span key={topic}>{topic}</span>
               ))}
             </div>
+            <ExamPlanView exam={exam} state={state} onUpdate={onUpdate} />
             <button
               className="icon-button danger exam-delete"
               aria-label="Usuń egzamin"
@@ -1991,21 +1998,10 @@ function SettingsView({
             </label>
           ) : null}
           <label className="switch-row">
-            <span>
-              <strong>Adaptacyjne przerwy</strong>
-              <small>
-                Długość krótkiej przerwy zależy od energii i jakości ostatnich
-                sesji.
-              </small>
-            </span>
-            <input
-              type="checkbox"
-              checked={state.settings.adaptiveBreaks}
-              onChange={(event) =>
-                setSetting("adaptiveBreaks", event.target.checked)
-              }
-            />
+            <span><strong>Sygnały końca etapów</strong><small>Osobny dźwięk rozpoczynający przerwę i powrót do skupienia.</small></span>
+            <input type="checkbox" checked={state.settings.timerSoundEnabled} onChange={(event) => setSetting("timerSoundEnabled", event.target.checked)} />
           </label>
+          {state.settings.timerSoundEnabled ? <label className="setting-inline-field">Głośność sygnałów <input type="range" min="0" max="1" step="0.05" value={state.settings.timerSoundVolume} onChange={(event) => setSetting("timerSoundVolume", Number(event.target.value))} aria-label="Głośność sygnałów timera" /> {Math.round(state.settings.timerSoundVolume * 100)}%</label> : null}
           <label className="switch-row">
             <span>
               <strong>Automatycznie rozpocznij przerwę</strong>

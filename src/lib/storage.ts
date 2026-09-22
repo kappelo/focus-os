@@ -740,6 +740,8 @@ export function migrateWorkspace(input: WorkspaceInput): WorkspaceState {
             enabled: mode.enabled !== false,
           }))
         : defaults.settings.timerModes,
+      timerSoundEnabled: input.settings?.timerSoundEnabled !== false,
+      timerSoundVolume: numberWithin(input.settings?.timerSoundVolume, 0, 1, 0.5),
       enabledStudyMethods: input.settings?.enabledStudyMethods?.length
         ? input.settings.enabledStudyMethods
         : defaults.settings.enabledStudyMethods,

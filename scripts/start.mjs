@@ -13,6 +13,12 @@ process.env.HOSTNAME ??= "0.0.0.0";
 const child = spawn(process.execPath, [server], {
   cwd: resolve(root, ".next", "standalone"), env: process.env, stdio: "inherit",
 });
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill(signal));
+const worker = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY
+  ? spawn(process.execPath, [resolve(root, "scripts", "push-worker.mjs")], {
+      cwd: root, env: process.env, stdio: "inherit", windowsHide: true,
+    })
+  : null;
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { child.kill(signal); worker?.kill(signal); });
 child.on("error", (error) => { console.error(error.message); process.exitCode = 1; });
-child.on("exit", (code) => { process.exitCode = code ?? 0; });
+child.on("exit", (code) => { worker?.kill(); process.exitCode = code ?? 0; });
+worker?.on("error", (error) => console.error(`Push worker: ${error.message}`));

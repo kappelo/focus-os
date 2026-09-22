@@ -1,10 +1,16 @@
-const CACHE = "focus-os-v6";
-const RUNTIME_CACHE = "focus-os-runtime-v6";
+const CACHE = "focus-os-v8";
+const RUNTIME_CACHE = "focus-os-runtime-v8";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
   "/icons/icon.svg",
   "/icons/icon-maskable.svg",
+  "/audio/rain.ogg",
+  "/audio/thunder.wav",
+  "/audio/forest.mp3",
+  "/audio/birds.ogg",
+  "/audio/waterflow.mp3",
+  "/audio/fireplace.ogg",
 ];
 
 self.addEventListener("install", (event) => {
